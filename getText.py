@@ -1,4 +1,7 @@
+import logging
 from paddleocr import PaddleOCR
+
+logging.getLogger("ppocr").setLevel(logging.ERROR)
 
 def ocr_with_paddle(image):
     ocr = PaddleOCR(
