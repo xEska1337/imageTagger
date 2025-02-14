@@ -5,22 +5,6 @@ from exifOperations import delete_metadata, write_tags, write_text
 from getTags import getTag
 from getText import ocr_with_paddle
 
-conn = sqlite3.connect("imageTagger.db")
-cursor = conn.cursor()
-
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS images (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        shaValue CHAR(64),
-        path VARCHAR(2000),
-        filename VARCHAR(2000),
-        tags VARCHAR(2000),
-        text VARCHAR(3000),
-        desc VARCHAR(4000)
-    )
-''')
-conn.commit()
-
 
 def get_image_files_from_directory(directory):
     imageExtensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
@@ -37,6 +21,22 @@ def calculate_sha256(filename):
 
 
 def scan(directory, delete, write):
+    conn = sqlite3.connect("imageTagger.db")
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shaValue CHAR(64),
+            path VARCHAR(2000),
+            filename VARCHAR(2000),
+            tags VARCHAR(2000),
+            text VARCHAR(3000),
+            desc VARCHAR(4000)
+        )
+    ''')
+    conn.commit()
+
     fileList = get_image_files_from_directory(directory)
     for file in fileList:
         filePath = os.path.normpath(os.path.join(directory, file))
@@ -70,5 +70,4 @@ def scan(directory, delete, write):
             cursor.execute(insertQuery, (calculate_sha256(filePath), directory, file, finalTags, ocr))
             conn.commit()
 
-
-conn.close()
+    conn.close()

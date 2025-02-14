@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap, QDesktopServices, QClipboard, QGuiApplication, QColor, QPalette
 from PyQt6.QtCore import Qt, QUrl, QTimer
+from scan import scan
 
 conn = sqlite3.connect("imageTagger.db")
 cursor = conn.cursor()
@@ -28,7 +29,6 @@ conn.commit()
 
 cursor.execute("INSERT INTO settings (id,deleteMetadata,writeMetadata,autoScan) VALUES (1,0,0,0) ON CONFLICT (id) DO NOTHING")
 conn.commit()
-
 
 class ImageTagger(QWidget):
 
@@ -164,16 +164,16 @@ class ImageTagger(QWidget):
         databaseButtonLayout.addWidget(label)
 
         scanButton = QPushButton("Scan directories", self)
-        #scanButton.clicked.connect(self.scan)
+        scanButton.clicked.connect(self.scanner)
         databaseButtonLayout.addWidget(scanButton)
 
         rebuildButton = QPushButton("Rebuild database", self)
-        #rebuildButton.clicked.connect(self.rebuild)
+        rebuildButton.clicked.connect(self.rebuild_database)
         databaseButtonLayout.addWidget(rebuildButton)
 
         deleteButton = QPushButton("Delete database", self)
         deleteButton.setStyleSheet("color: red;")
-        #deleteButton.clicked.connect(self.delete_database)
+        deleteButton.clicked.connect(self.delete_database)
         databaseButtonLayout.addWidget(deleteButton)
 
         # Settings checkboxes
@@ -255,6 +255,30 @@ class ImageTagger(QWidget):
             for row in result:
                 self.directories.insert(0, row[0])
             self.refresh_list()
+
+    def scanner(self):
+        cursor.execute("SELECT directory FROM settings WHERE id != 1")
+        result = cursor.fetchall()
+        if result:
+            for row in result:
+                scan(row[0], self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
+
+    def delete_database(self):
+        reply = QMessageBox.question(self, 'Confirm Deletion',
+                                     f"Are you sure you want to delete image database",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            cursor.execute("DROP TABLE images")
+            conn.commit()
+
+    def rebuild_database(self):
+        reply = QMessageBox.question(self, 'Confirm Rebuild',
+                                     f"Are you sure you want to rebuild image database",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            cursor.execute("DROP TABLE images")
+            conn.commit()
+            self.scanner()
 
 
 if __name__ == "__main__":
