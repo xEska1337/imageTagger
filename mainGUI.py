@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+import sqlite3
 import qdarktheme
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QFileDialog,
@@ -11,8 +12,26 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QPixmap, QDesktopServices, QClipboard, QGuiApplication, QColor, QPalette
 from PyQt6.QtCore import Qt, QUrl, QTimer
 
+conn = sqlite3.connect("imageTagger.db")
+cursor = conn.cursor()
+
+cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            directory VARCHAR(3000),
+            deleteMetadata BOOLEAN,
+            writeMetadata BOOLEAN,
+            autoScan BOOLEAN
+        )
+    ''')
+conn.commit()
+
+cursor.execute("INSERT INTO settings (id,deleteMetadata,writeMetadata,autoScan) VALUES (1,0,0,0) ON CONFLICT (id) DO NOTHING")
+conn.commit()
+
 
 class ImageTagger(QWidget):
+
     def __init__(self):
         super().__init__()
 
@@ -136,7 +155,7 @@ class ImageTagger(QWidget):
 
         # Init directory list
         self.directories = []  # This will hold all selected directories
-        #self.load_directories()
+        self.load_directories()
 
         # Database action buttons
         databaseButtonLayout = QVBoxLayout()
@@ -164,19 +183,18 @@ class ImageTagger(QWidget):
         checkboxesLayout.addWidget(label2)
 
         self.deleteMetadataCheckbox = QCheckBox("Delete all metadata from scanned images", self)
-        self.deleteMetadataCheckbox.setChecked(False)
-        #self.deleteMetadataCheckbox.stateChanged.connect(self.checkbox_changed)
+        self.deleteMetadataCheckbox.stateChanged.connect(self.checkbox_changed)
         checkboxesLayout.addWidget(self.deleteMetadataCheckbox)
 
         self.writeMetadataCheckbox = QCheckBox("Write tags to image metadata", self)
-        self.writeMetadataCheckbox.setChecked(False)
-        #self.writeMetadataCheckbox.stateChanged.connect(self.checkbox_changed)
+        self.writeMetadataCheckbox.stateChanged.connect(self.checkbox_changed)
         checkboxesLayout.addWidget(self.writeMetadataCheckbox)
 
         self.autoscanCheckbox = QCheckBox("Auto scan new images", self)
-        self.autoscanCheckbox.setChecked(False)
-        #self.autoscanCheckbox.stateChanged.connect(self.checkbox_changed)
+        self.autoscanCheckbox.stateChanged.connect(self.checkbox_changed)
         checkboxesLayout.addWidget(self.autoscanCheckbox)
+
+        self.load_checkbox_state()
 
         secondLayout = QHBoxLayout()
         secondLayout.addLayout(databaseButtonLayout)
@@ -191,6 +209,8 @@ class ImageTagger(QWidget):
                 self.directories.insert(0, newFolderPath)
                 # Update the QListWidget
                 self.refresh_list()
+                cursor.execute("INSERT INTO settings (directory) VALUES (?)", (newFolderPath,))
+                conn.commit()
             else:
                 QMessageBox.warning(self, "Directory Already Added", "This directory is already added.")
 
@@ -208,14 +228,40 @@ class ImageTagger(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             self.directories.remove(selectedDirectory)
             self.refresh_list()
+            cursor.execute("DELETE FROM settings WHERE directory=?", (selectedDirectory,))
+            conn.commit()
 
     def refresh_list(self):
         self.directoryList.clear()
         for directory in self.directories:
             self.directoryList.addItem(directory)
 
+    def load_checkbox_state(self):
+        cursor.execute("SELECT deleteMetadata, writeMetadata, autoScan FROM settings WHERE id = 1")
+        result = cursor.fetchone()
+        if result:
+            self.deleteMetadataCheckbox.setChecked(bool(result[0]))
+            self.writeMetadataCheckbox.setChecked(bool(result[1]))
+            self.autoscanCheckbox.setChecked(bool(result[2]))
+
+    def checkbox_changed(self):
+        cursor.execute("UPDATE settings SET deleteMetadata = ?, writeMetadata = ?, autoScan = ? WHERE id = 1", (int(self.deleteMetadataCheckbox.isChecked()), int(self.writeMetadataCheckbox.isChecked()), int(self.autoscanCheckbox.isChecked())))
+        conn.commit()
+
+    def load_directories(self):
+        cursor.execute("SELECT directory FROM settings WHERE id != 1")
+        result = cursor.fetchall()
+        if result:
+            for row in result:
+                self.directories.insert(0, row[0])
+            self.refresh_list()
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = ImageTagger()
     window.show()
     sys.exit(app.exec())
+
+
+conn.close()
