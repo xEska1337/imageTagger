@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QFileDialog,
     QVBoxLayout, QHBoxLayout, QScrollArea, QGridLayout, QFrame,
     QProgressBar, QTabWidget, QComboBox, QLineEdit, QListWidget,
-    QCheckBox
+    QCheckBox, QMessageBox
 )
 from PyQt6.QtGui import QPixmap, QDesktopServices, QClipboard, QGuiApplication, QColor, QPalette
 from PyQt6.QtCore import Qt, QUrl, QTimer
@@ -125,10 +125,12 @@ class ImageTagger(QWidget):
 
         buttonLayout = QHBoxLayout()
         addButton = QPushButton("Add Directory", self)
-        #addButton.clicked.connect(self.add_directory)
+        addButton.setStyleSheet("color: green;")
+        addButton.clicked.connect(self.add_directory)
         buttonLayout.addWidget(addButton)
         removeButton = QPushButton("Remove Directory", self)
-        #removeButton.clicked.connect(self.remove_directory)
+        removeButton.setStyleSheet("color: red;")
+        removeButton.clicked.connect(self.remove_directory)
         buttonLayout.addWidget(removeButton)
         layout.addLayout(buttonLayout)
 
@@ -181,6 +183,36 @@ class ImageTagger(QWidget):
         secondLayout.addLayout(checkboxesLayout)
 
         layout.addLayout(secondLayout)
+
+    def add_directory(self):
+        newFolderPath = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if newFolderPath:
+            if newFolderPath not in self.directories:
+                self.directories.insert(0, newFolderPath)
+                # Update the QListWidget
+                self.refresh_list()
+            else:
+                QMessageBox.warning(self, "Directory Already Added", "This directory is already added.")
+
+    def remove_directory(self):
+        selectedItems = self.directoryList.selectedItems()
+        if not selectedItems:
+            QMessageBox.warning(self, "No Selection", "Please select a directory to remove.")
+            return
+
+        selectedDirectory = selectedItems[0].text()
+
+        reply = QMessageBox.question(self, 'Confirm Deletion',
+                                     f"Are you sure you want to remove '{selectedDirectory}'?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.directories.remove(selectedDirectory)
+            self.refresh_list()
+
+    def refresh_list(self):
+        self.directoryList.clear()
+        for directory in self.directories:
+            self.directoryList.addItem(directory)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
