@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap, QDesktopServices, QClipboard, QGuiApplication, QColor, QPalette
 from PyQt6.QtCore import Qt, QUrl, QTimer
-from scan import scan
+from scan import start_scanner
 
 conn = sqlite3.connect("imageTagger.db")
 cursor = conn.cursor()
@@ -29,6 +29,7 @@ conn.commit()
 
 cursor.execute("INSERT INTO settings (id,deleteMetadata,writeMetadata,autoScan) VALUES (1,0,0,0) ON CONFLICT (id) DO NOTHING")
 conn.commit()
+
 
 class ImageTagger(QWidget):
 
@@ -261,7 +262,7 @@ class ImageTagger(QWidget):
         result = cursor.fetchall()
         if result:
             for row in result:
-                scan(row[0], self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
+                start_scanner(row[0], self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
 
     def delete_database(self):
         reply = QMessageBox.question(self, 'Confirm Deletion',
