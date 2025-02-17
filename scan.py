@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import hashlib
+import time
 from exifOperations import delete_metadata, write_tags, write_text
 from getTags import getTag
 from getText import ocr_with_paddle
@@ -29,6 +30,8 @@ class Scanner(QThread):
     progressStatus = pyqtSignal()
     processedFile = pyqtSignal(str)
     taskFinished = pyqtSignal()
+    avgProcessingTime = pyqtSignal(float)
+    processedItemsCount = pyqtSignal(int)
 
     def __init__(self, directory, delete, write):
         super().__init__()
@@ -54,8 +57,9 @@ class Scanner(QThread):
         conn.commit()
 
         fileList = get_image_files_from_directory(self.directory)
+        startTime = time.time()
         self.itemCount.emit(len(fileList))
-        for file in fileList:
+        for index, file in enumerate(fileList):
             filePath = os.path.normpath(os.path.join(self.directory, file))
             # Check if it already exists in database
             checkIfExistQuery = "SELECT id FROM images WHERE path LIKE ? AND shaValue LIKE ?"
@@ -89,6 +93,9 @@ class Scanner(QThread):
                 conn.commit()
 
             self.progressStatus.emit()
+            self.processedItemsCount.emit(index)
+            elapsedTime = time.time() - startTime
+            self.avgProcessingTime.emit(elapsedTime/(index + 1))
         self.taskFinished.emit()
         conn.close()
 
@@ -106,19 +113,39 @@ class ProgressBarWindow(QWidget):
 
         self.progressBar = QProgressBar()
         self.progressBar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
         layout.addWidget(self.progressBar)
+
+        self.avgProcessingTime = QLabel("", self)
+        layout.addWidget(self.avgProcessingTime)
+
+        self.itemsLeftLabel = QLabel("", self)
+        layout.addWidget(self.itemsLeftLabel)
+
         self.setLayout(layout)
 
         self.scan = Scanner(directory, delete, write)
-        self.scan.itemCount.connect(self.progressBar.setMaximum)
+        self.scan.itemCount.connect(self.item_count)
         self.scan.progressStatus.connect(self.update_progress)
+        self.scan.avgProcessingTime.connect(self.avg_time)
+        self.scan.processedItemsCount.connect(self.items_left)
         self.scan.processedFile.connect(self.label.setText)
         self.scan.taskFinished.connect(self.close)
         self.scan.start()
 
+        self.itemsLeftVar = 0
+
     def update_progress(self):
         self.progressBar.setValue(self.progressBar.value() + 1)
+
+    def avg_time(self, value):
+        self.avgProcessingTime.setText(f"Avg time per item: {value:.1f} sec")
+
+    def item_count(self, value):
+        self.progressBar.setMaximum(value)
+        self.itemsLeftVar = value
+
+    def items_left(self, value):
+        self.itemsLeftLabel.setText(f"Items left: {self.itemsLeftVar - value}")
 
     def closeEvent(self, a0):
         self.scan.terminate()
