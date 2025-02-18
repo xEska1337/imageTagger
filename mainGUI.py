@@ -27,6 +27,19 @@ cursor.execute('''
     ''')
 conn.commit()
 
+cursor.execute('''
+            CREATE TABLE IF NOT EXISTS images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shaValue CHAR(64),
+                path VARCHAR(2000),
+                filename VARCHAR(2000),
+                tags VARCHAR(2000),
+                text VARCHAR(3000),
+                desc VARCHAR(4000)
+            )
+        ''')
+conn.commit()
+
 cursor.execute("INSERT INTO settings (id,deleteMetadata,writeMetadata,autoScan) VALUES (1,0,0,0) ON CONFLICT (id) DO NOTHING")
 conn.commit()
 
@@ -71,6 +84,7 @@ class ImageTagger(QWidget):
         # Init tabs
         self.init_images_tab()
         self.init_settings_tab()
+        QTimer.singleShot(100, self.load_images)
 
     def init_images_tab(self):
 
@@ -130,6 +144,124 @@ class ImageTagger(QWidget):
 
         infoStripLayout.addLayout(infoStripLayoutHorizontal)
         layout.addLayout(infoStripLayout)
+
+        self.imageWidgets = []
+        self.currentColumns = 0
+        self.resizeTimer = QTimer(self)
+        self.resizeTimer.setSingleShot(True)
+        self.resizeTimer.timeout.connect(self.rearrange_grid)
+
+    def load_images(self):
+        cursor.execute("SELECT path, filename FROM images")
+        result = cursor.fetchall()
+        if result:
+            startTime = time.time()
+            self.imageWidgets.clear()
+            self.progressBar.setMaximum(len(result))
+            self.progressBar.setValue(0)
+            self.progressBar.setVisible(True)
+            for index, (path, filename) in enumerate(result):
+                fullPath = os.path.normpath(os.path.join(path, filename))
+
+                pixmap = QPixmap(fullPath)
+                if pixmap.isNull():
+                    continue
+
+                frame = QFrame(self)
+                frameLayout = QVBoxLayout(frame)
+                frameLayout.setContentsMargins(0, 0, 0, 0)
+                frameLayout.setSpacing(0)
+                frame.setStyleSheet("""
+                    QFrame {
+                        border: 1px solid #444;
+                    }
+                    QLabel {
+                        padding: 5px;
+                        border: none;
+                    }
+                """)
+
+                imageContent = QLabel(self)
+                thumbnail = pixmap.scaled(250, 250, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                imageContent.setPixmap(thumbnail)
+                imageContent.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                statsLayout = QHBoxLayout()
+
+                resolutionLabel = QLabel(f"{pixmap.width()} x {pixmap.height()}", self)
+                resolutionLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                statsLayout.addWidget(resolutionLabel)
+
+                size = os.path.getsize(fullPath)
+                units = ["B", "KB", "MB", "GB"]
+                unitIndex = 0
+
+                while size >= 1024 and unitIndex < len(units) - 1:
+                    size /= 1024
+                    unitIndex += 1
+
+                sizeLabel = QLabel(f"{size:.2f} {units[unitIndex]}", self)
+                sizeLabel.setAlignment(Qt.AlignmentFlag.AlignRight)
+                statsLayout.addWidget(sizeLabel)
+
+                filenameLabel = QLabel(filename)
+                if len(filename) >= 41:
+                    filenameLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                else:
+                    filenameLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                filenameLabel.setStyleSheet("""
+                QLabel {
+                    max-width: 250px;
+                    text-overflow: ellipsis;
+                }
+                """)
+                filenameLabel.setToolTip(filename)
+
+                frameLayout.addWidget(imageContent)
+                frameLayout.addLayout(statsLayout)
+                frameLayout.addWidget(filenameLabel)
+                frame.setLayout(frameLayout)
+
+                self.imageWidgets.append(frame)
+                self.gridLayout.addWidget(frame)
+                self.progressBar.setValue(index + 1)
+                elapsedTime = time.time() - startTime
+                remainingTime = (elapsedTime / (index + 1)) * (len(result) - (index + 1))
+                self.etaTimer.setText(f"Estimated time remaining: {remainingTime:.1f} sec")
+
+            self.progressBar.setVisible(False)
+            self.imageCounter.setText(f"Images: {len(result)}")
+            self.rearrange_grid()
+            self.etaTimer.setText("")
+        else:
+            noImageLabel = QLabel("No images to display, scan folder first", self)
+            self.gridLayout.addWidget(noImageLabel)
+
+    def rearrange_grid(self):
+        if not self.imageWidgets:
+            return
+
+        windowWidth = self.width()
+        imageSize = 250
+        spacing = 10
+        columns = max(1, windowWidth // (imageSize + spacing))
+
+        if columns == self.currentColumns:
+            return
+
+        self.currentColumns = columns
+
+        row, col = 0, 0
+        for frame in self.imageWidgets:
+            self.gridLayout.addWidget(frame, row, col)
+            col += 1
+            if col >= columns:
+                col = 0
+                row += 1
+
+    def resizeEvent(self, a0):
+        self.resizeTimer.start(50)
+        super().resizeEvent(a0)
 
     def init_settings_tab(self):
 

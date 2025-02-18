@@ -59,6 +59,7 @@ class Scanner(QThread):
         fileList = get_image_files_from_directory(self.directory)
         startTime = time.time()
         self.itemCount.emit(len(fileList))
+        skipped = 0
         for index, file in enumerate(fileList):
             filePath = os.path.normpath(os.path.join(self.directory, file))
             # Check if it already exists in database
@@ -91,11 +92,13 @@ class Scanner(QThread):
                 insertQuery = "INSERT INTO images (shaValue, path, filename, tags, text) VALUES (?, ?, ?, ?, ?)"
                 cursor.execute(insertQuery, (calculate_sha256(filePath), self.directory, file, finalTags, ocr))
                 conn.commit()
+            else:
+                skipped += 1
 
             self.progressStatus.emit()
             self.processedItemsCount.emit(index)
             elapsedTime = time.time() - startTime
-            self.avgProcessingTime.emit(elapsedTime/(index + 1))
+            self.avgProcessingTime.emit(elapsedTime/(index + 2 - skipped))
         self.taskFinished.emit()
         conn.close()
 
@@ -151,6 +154,7 @@ class ProgressBarWindow(QWidget):
         self.scan.terminate()
         self.scan.wait()
         a0.accept()
+
 
 def start_scanner(directory, delete, write):
     app = QApplication.instance()
