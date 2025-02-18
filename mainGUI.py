@@ -3,13 +3,14 @@ import os
 import time
 import sqlite3
 import qdarktheme
+import subprocess
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QFileDialog,
     QVBoxLayout, QHBoxLayout, QScrollArea, QGridLayout, QFrame,
     QProgressBar, QTabWidget, QComboBox, QLineEdit, QListWidget,
-    QCheckBox, QMessageBox
+    QCheckBox, QMessageBox, QMenu
 )
-from PyQt6.QtGui import QPixmap, QDesktopServices, QClipboard, QGuiApplication, QColor, QPalette
+from PyQt6.QtGui import QPixmap, QDesktopServices, QGuiApplication, QColor, QPalette, QCursor
 from PyQt6.QtCore import Qt, QUrl, QTimer
 from scan import start_scanner
 
@@ -186,6 +187,10 @@ class ImageTagger(QWidget):
                 imageContent.setPixmap(thumbnail)
                 imageContent.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+                frame.mousePressEvent = lambda event, path=fullPath: self.open_image(event, path)
+                frame.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                frame.customContextMenuRequested.connect(lambda _, path=fullPath: self.show_context_menu(path))
+
                 statsLayout = QHBoxLayout()
 
                 resolutionLabel = QLabel(f"{pixmap.width()} x {pixmap.height()}", self)
@@ -262,6 +267,30 @@ class ImageTagger(QWidget):
     def resizeEvent(self, a0):
         self.resizeTimer.start(50)
         super().resizeEvent(a0)
+
+    def open_image(self, event, path):
+        if event.button() == Qt.MouseButton.LeftButton:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def show_context_menu(self, path):
+        menu = QMenu(self)
+        menu.setStyleSheet("border-radius: 10px;")
+        copy = menu.addAction("Copy to clipboard")
+        copyPath = menu.addAction("Copy path")
+        openPath = menu.addAction("Open file location")
+        action = menu.exec(QCursor.pos())
+        if action == copy:
+            clipboard = QGuiApplication.clipboard()
+            pixmap = QPixmap(path)
+            clipboard.setPixmap(pixmap)
+        elif action == copyPath:
+            clipboard = QGuiApplication.clipboard()
+            clipboard.setText(path)
+        elif action == openPath:
+            if sys.platform == "win32":
+                subprocess.run(["explorer", "/select,", path])
+            else:
+                subprocess.run(["nautilus", "--select", path])
 
     def init_settings_tab(self):
 
