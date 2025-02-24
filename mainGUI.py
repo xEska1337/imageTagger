@@ -97,8 +97,8 @@ class ImageTagger(QWidget):
         searchBoxLayout.setContentsMargins(5, 5, 5, 5)
 
         self.searchBox = QLineEdit(self)
-        self.searchBox.setPlaceholderText("Search images...")
-        #self.searchBox.textChanged.connect(self.filter_images)
+        self.searchBox.setPlaceholderText("Search images... (tags:train car cloud text:)")
+        self.searchBox.textChanged.connect(self.search_images)
         searchBoxLayout.addWidget(self.searchBox)
 
         layout.addLayout(searchBoxLayout)
@@ -153,7 +153,7 @@ class ImageTagger(QWidget):
         self.resizeTimer.timeout.connect(self.rearrange_grid)
 
     def load_images(self):
-        cursor.execute("SELECT path, filename FROM images")
+        cursor.execute("SELECT id, path, filename FROM images")
         result = cursor.fetchall()
         if result:
             startTime = time.time()
@@ -161,7 +161,7 @@ class ImageTagger(QWidget):
             self.progressBar.setMaximum(len(result))
             self.progressBar.setValue(0)
             self.progressBar.setVisible(True)
-            for index, (path, filename) in enumerate(result):
+            for index, (id, path, filename) in enumerate(result):
                 fullPath = os.path.normpath(os.path.join(path, filename))
 
                 pixmap = QPixmap(fullPath)
@@ -169,6 +169,8 @@ class ImageTagger(QWidget):
                     continue
 
                 frame = QFrame(self)
+                frame.setObjectName(f"{id}")
+                frame.setProperty("visibility", True)
                 frameLayout = QVBoxLayout(frame)
                 frameLayout.setContentsMargins(0, 0, 0, 0)
                 frameLayout.setSpacing(0)
@@ -251,15 +253,13 @@ class ImageTagger(QWidget):
         spacing = 10
         columns = max(1, windowWidth // (imageSize + spacing))
 
-        if columns == self.currentColumns:
-            return
-
         self.currentColumns = columns
 
         row, col = 0, 0
         for frame in self.imageWidgets:
-            self.gridLayout.addWidget(frame, row, col)
-            col += 1
+            if frame.property("visibility"):
+                self.gridLayout.addWidget(frame, row, col)
+                col += 1
             if col >= columns:
                 col = 0
                 row += 1
@@ -291,6 +291,51 @@ class ImageTagger(QWidget):
                 subprocess.run(["explorer", "/select,", path])
             else:
                 subprocess.run(["nautilus", "--select", path])
+
+    def search_images(self):
+        if not self.imageWidgets:
+            return
+
+        query = self.searchBox.text().lower().strip()
+
+        tagsSearch = ""
+        textSearch = query
+
+        if "tags:" in query:
+            parts = query.split("tags:")
+            if len(parts) > 1:
+                tagsPart = parts[1].split("text:")[0].strip()
+                tagsSearch = [tag.strip() for tag in tagsPart.split(" ")]
+
+        if "text:" in query:
+            parts = query.split("text:")
+            if len(parts) > 1:
+                textSearch = parts[1].strip()
+
+        sqlQuery = "SELECT id FROM images WHERE 1=1"
+
+        if tagsSearch:
+            for tag in tagsSearch:
+                sqlQuery += f" AND tags LIKE '%{tag}%'"
+
+            if textSearch != query:
+                sqlQuery += f" AND text LIKE '%{textSearch}%'"
+        else:
+            sqlQuery += f" AND text LIKE '%{textSearch}%'"
+
+        cursor.execute(sqlQuery)
+        result = cursor.fetchall()
+        if result:
+            ids = {str(row[0]) for row in result}
+            for frame in self.imageWidgets:
+                if not frame.objectName() in ids:
+                    frame.setVisible(False)
+                    frame.setProperty("visibility", False)
+                else:
+                    frame.setVisible(True)
+                    frame.setProperty("visibility", True)
+
+            self.rearrange_grid()
 
     def init_settings_tab(self):
 
