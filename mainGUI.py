@@ -135,7 +135,7 @@ class ImageTagger(QWidget):
             # Sorting options
         self.sortList = QComboBox()
         self.sortList.addItems(["Name (A-Z)", "Name (Z-A)", "Size (Smallest First)", "Size (Largest First)", "Date (Newest First)", "Date (Oldest First)"])
-        #self.sortList.currentTextChanged.connect(self.sort_images)
+        self.sortList.currentTextChanged.connect(self.sort_images)
         infoStripLayoutHorizontal.addWidget(self.sortList)
 
             # Timer when loading
@@ -171,6 +171,7 @@ class ImageTagger(QWidget):
                 frame = QFrame(self)
                 frame.setObjectName(f"{id}")
                 frame.setProperty("visibility", True)
+                frame.setProperty("fullPath", fullPath)
                 frameLayout = QVBoxLayout(frame)
                 frameLayout.setContentsMargins(0, 0, 0, 0)
                 frameLayout.setSpacing(0)
@@ -212,6 +213,7 @@ class ImageTagger(QWidget):
                 statsLayout.addWidget(sizeLabel)
 
                 filenameLabel = QLabel(filename)
+                filenameLabel.setObjectName("filename")
                 if len(filename) >= 41:
                     filenameLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 else:
@@ -239,6 +241,7 @@ class ImageTagger(QWidget):
             self.progressBar.setVisible(False)
             self.imageCounter.setText(f"Images: {len(result)}")
             self.rearrange_grid()
+            self.sort_images()
             self.etaTimer.setText("")
         else:
             noImageLabel = QLabel("No images to display, scan folder first", self)
@@ -336,6 +339,27 @@ class ImageTagger(QWidget):
                     frame.setProperty("visibility", True)
 
             self.rearrange_grid()
+
+    def sort_images(self):
+        match self.sortList.currentIndex():
+            case 0:
+                self.imageWidgets.sort(key=lambda f: f.findChild(QLabel, "filename").text().lower())
+                self.rearrange_grid()
+            case 1:
+                self.imageWidgets.sort(key=lambda f: f.findChild(QLabel, "filename").text().lower(), reverse=True)
+                self.rearrange_grid()
+            case 2:
+                self.imageWidgets.sort(key=lambda f: os.path.getsize(f.property("fullPath")))
+                self.rearrange_grid()
+            case 3:
+                self.imageWidgets.sort(key=lambda f: os.path.getsize(f.property("fullPath")), reverse=True)
+                self.rearrange_grid()
+            case 4:
+                self.imageWidgets.sort(key=lambda f: os.path.getctime(f.property("fullPath")), reverse=True)
+                self.rearrange_grid()
+            case 5:
+                self.imageWidgets.sort(key=lambda f: os.path.getctime(f.property("fullPath")))
+                self.rearrange_grid()
 
     def init_settings_tab(self):
 
