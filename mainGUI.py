@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QPixmap, QDesktopServices, QGuiApplication, QColor, QPalette, QCursor
 from PyQt6.QtCore import Qt, QUrl, QTimer
 from scan import start_scanner
+from multiComboBoxWithSearch import MultiSelectComboBoxWithSearch
 
 conn = sqlite3.connect("imageTagger.db")
 cursor = conn.cursor()
@@ -43,6 +44,10 @@ conn.commit()
 
 cursor.execute("INSERT INTO settings (id,deleteMetadata,writeMetadata,autoScan) VALUES (1,0,0,0) ON CONFLICT (id) DO NOTHING")
 conn.commit()
+
+searchText = ""
+searchTags = []
+filterTags = []
 
 
 class ImageTagger(QWidget):
@@ -86,6 +91,7 @@ class ImageTagger(QWidget):
         self.init_images_tab()
         self.init_settings_tab()
         QTimer.singleShot(100, self.load_images)
+        QTimer.singleShot(100, self.pull_tags)
 
     def init_images_tab(self):
 
@@ -100,6 +106,11 @@ class ImageTagger(QWidget):
         self.searchBox.setPlaceholderText("Search images... (tags:train car cloud text:)")
         self.searchBox.textChanged.connect(self.search_images)
         searchBoxLayout.addWidget(self.searchBox)
+
+        self.combo = MultiSelectComboBoxWithSearch()
+        self.combo.setFixedSize(200, 40)
+        self.combo.selected_items_changed.connect(self.filter_tags)
+        searchBoxLayout.addWidget(self.combo)
 
         layout.addLayout(searchBoxLayout)
 
@@ -315,30 +326,11 @@ class ImageTagger(QWidget):
             if len(parts) > 1:
                 textSearch = parts[1].strip()
 
-        sqlQuery = "SELECT id FROM images WHERE 1=1"
-
-        if tagsSearch:
-            for tag in tagsSearch:
-                sqlQuery += f" AND tags LIKE '%{tag}%'"
-
-            if textSearch != query:
-                sqlQuery += f" AND text LIKE '%{textSearch}%'"
-        else:
-            sqlQuery += f" AND text LIKE '%{textSearch}%'"
-
-        cursor.execute(sqlQuery)
-        result = cursor.fetchall()
-        if result:
-            ids = {str(row[0]) for row in result}
-            for frame in self.imageWidgets:
-                if not frame.objectName() in ids:
-                    frame.setVisible(False)
-                    frame.setProperty("visibility", False)
-                else:
-                    frame.setVisible(True)
-                    frame.setProperty("visibility", True)
-
-            self.rearrange_grid()
+        global searchText
+        searchText = textSearch
+        global searchTags
+        searchTags = tagsSearch
+        self.image_hider()
 
     def sort_images(self):
         match self.sortList.currentIndex():
@@ -360,6 +352,62 @@ class ImageTagger(QWidget):
             case 5:
                 self.imageWidgets.sort(key=lambda f: os.path.getctime(f.property("fullPath")))
                 self.rearrange_grid()
+
+    def pull_tags(self):
+        cursor.execute("SELECT tags FROM images")
+        result = cursor.fetchall()
+        if result:
+            tempTags = []
+            for row in result:
+                values = row[0].split(';')
+                values = [value for value in values if value]
+                tempTags.extend(values)
+
+            tags = list(set(tempTags))
+            tags.sort()
+
+            self.combo.addItems(tags)
+
+    def filter_tags(self, value):
+        global filterTags
+        filterTags = value
+        self.image_hider()
+
+    def image_hider(self):
+        sqlQuery = "SELECT id FROM images WHERE 1=1"
+
+        global searchTags
+        global searchText
+        if searchTags:
+            for tag in searchTags:
+                sqlQuery += f" AND tags LIKE '%{tag}%'"
+
+            if searchText != self.searchBox.text().lower().strip():
+                sqlQuery += f" AND text LIKE '%{searchText}%'"
+        else:
+            sqlQuery += f" AND text LIKE '%{searchText}%'"
+
+        global filterTags
+        for tag in filterTags:
+            sqlQuery += f" AND tags LIKE '%{tag}%'"
+
+        cursor.execute(sqlQuery)
+        result = cursor.fetchall()
+        if result:
+            ids = {str(row[0]) for row in result}
+            for frame in self.imageWidgets:
+                if not frame.objectName() in ids:
+                    frame.setVisible(False)
+                    frame.setProperty("visibility", False)
+                else:
+                    frame.setVisible(True)
+                    frame.setProperty("visibility", True)
+        else:
+            for frame in self.imageWidgets:
+                frame.setVisible(False)
+                frame.setProperty("visibility", False)
+
+        self.rearrange_grid()
 
     def init_settings_tab(self):
 
