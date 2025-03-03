@@ -2,18 +2,28 @@ import os
 import sqlite3
 import hashlib
 import time
+import qdarktheme
 from exifOperations import delete_metadata, write_tags, write_text
 from getTags import getTag
 from getText import ocr_with_paddle
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QProgressBar, QLabel
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from pathlib import Path
 
 scanWindow = None
 
 
 def get_image_files_from_directory(directory):
     imageExtensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
-    return [entry.name for entry in os.scandir(directory) if entry.is_file() and os.path.splitext(entry.name)[1].lower() in imageExtensions]
+    if os.path.isdir(directory):
+        return [file.name for file in Path(directory).iterdir() if file.is_file() and file.suffix.lower() in imageExtensions]
+
+    else:
+        path = Path(directory)
+        if path.is_file() and path.suffix.lower() in imageExtensions:
+            return [path.name]
+        else:
+            os._exit(1)
 
 
 def calculate_sha256(filename):
@@ -57,6 +67,8 @@ class Scanner(QThread):
         conn.commit()
 
         fileList = get_image_files_from_directory(self.directory)
+        if not os.path.isdir(self.directory):
+            self.directory = os.path.dirname(self.directory)
         startTime = time.time()
         self.itemCount.emit(len(fileList))
         skipped = 0
@@ -106,6 +118,7 @@ class Scanner(QThread):
 class ProgressBarWindow(QWidget):
     def __init__(self, directory, delete, write):
         super().__init__()
+        qdarktheme.setup_theme()
         self.setWindowTitle("Scanning progress")
         self.setGeometry(100, 100, 300, 100)
 
