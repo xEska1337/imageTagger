@@ -14,6 +14,7 @@ from PyQt6.QtGui import QPixmap, QDesktopServices, QGuiApplication, QColor, QPal
 from PyQt6.QtCore import Qt, QUrl, QTimer
 from scan import start_scanner
 from multiComboBoxWithSearch import MultiSelectComboBoxWithSearch
+from watchFolders import start_watching, stop_watching
 
 conn = sqlite3.connect("imageTagger.db")
 cursor = conn.cursor()
@@ -462,15 +463,15 @@ class ImageTagger(QWidget):
         checkboxesLayout.addWidget(label2)
 
         self.deleteMetadataCheckbox = QCheckBox("Delete all metadata from scanned images", self)
-        self.deleteMetadataCheckbox.stateChanged.connect(self.checkbox_changed)
+        self.deleteMetadataCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed(False))
         checkboxesLayout.addWidget(self.deleteMetadataCheckbox)
 
         self.writeMetadataCheckbox = QCheckBox("Write tags to image metadata", self)
-        self.writeMetadataCheckbox.stateChanged.connect(self.checkbox_changed)
+        self.writeMetadataCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed(False))
         checkboxesLayout.addWidget(self.writeMetadataCheckbox)
 
         self.autoscanCheckbox = QCheckBox("Auto scan new images", self)
-        self.autoscanCheckbox.stateChanged.connect(self.checkbox_changed)
+        self.autoscanCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed(True))
         checkboxesLayout.addWidget(self.autoscanCheckbox)
 
         self.load_checkbox_state()
@@ -490,6 +491,7 @@ class ImageTagger(QWidget):
                 self.refresh_list()
                 cursor.execute("INSERT INTO settings (directory) VALUES (?)", (newFolderPath,))
                 conn.commit()
+                self.checkbox_changed(True)
             else:
                 QMessageBox.warning(self, "Directory Already Added", "This directory is already added.")
 
@@ -509,6 +511,7 @@ class ImageTagger(QWidget):
             self.refresh_list()
             cursor.execute("DELETE FROM settings WHERE directory=?", (selectedDirectory,))
             conn.commit()
+            self.checkbox_changed(True)
 
     def refresh_list(self):
         self.directoryList.clear()
@@ -523,9 +526,18 @@ class ImageTagger(QWidget):
             self.writeMetadataCheckbox.setChecked(bool(result[1]))
             self.autoscanCheckbox.setChecked(bool(result[2]))
 
-    def checkbox_changed(self):
+    def checkbox_changed(self, value):
         cursor.execute("UPDATE settings SET deleteMetadata = ?, writeMetadata = ?, autoScan = ? WHERE id = 1", (int(self.deleteMetadataCheckbox.isChecked()), int(self.writeMetadataCheckbox.isChecked()), int(self.autoscanCheckbox.isChecked())))
         conn.commit()
+        if value and self.autoscanCheckbox.isChecked():
+            stop_watching()
+            cursor.execute("SELECT directory FROM settings WHERE id != 1")
+            result = cursor.fetchall()
+            if result:
+                for row in result:
+                    start_watching(row, self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
+        elif not self.autoscanCheckbox.isChecked():
+            stop_watching()
 
     def load_directories(self):
         cursor.execute("SELECT directory FROM settings WHERE id != 1")
@@ -558,6 +570,10 @@ class ImageTagger(QWidget):
             cursor.execute("DROP TABLE images")
             conn.commit()
             self.scanner()
+
+    def closeEvent(self, a0):
+        stop_watching()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
