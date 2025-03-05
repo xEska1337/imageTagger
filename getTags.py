@@ -2,9 +2,12 @@ import numpy as np
 import onnxruntime as onr
 import pandas as pd
 from PIL import Image
+from downloadModel import check_and_download
 
 LABEL_FILE_PATH = "tagsModel/selected_tags.csv"
 MODEL_FILE_PATH = "tagsModel/model.onnx"
+
+
 def load_labels(dataframe) -> list[str]:
     name_series = dataframe["name"]
     tag_names = name_series.tolist()
@@ -14,12 +17,15 @@ def load_labels(dataframe) -> list[str]:
     character_indexes = list(np.where(dataframe["category"] == 4)[0])
     return tag_names, rating_indexes, general_indexes, character_indexes
 
+
 class Predictor:
     def __init__(self):
         self.model_target_size = None
         self.load_model(MODEL_FILE_PATH, LABEL_FILE_PATH)
 
     def load_model(self, model_path, csv_path):
+        check_and_download()
+
         tags_df = pd.read_csv(csv_path)
         sep_tags = load_labels(tags_df)
 
@@ -113,6 +119,7 @@ class Predictor:
 
 # Initialize the predictor object
 predictor = Predictor()
+
 
 def getTag(image_path: str, score_threshold: float):
     image = Image.open(image_path)
