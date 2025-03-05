@@ -61,7 +61,8 @@ class Scanner(QThread):
                 filename VARCHAR(2000),
                 tags VARCHAR(2000),
                 text VARCHAR(3000),
-                desc VARCHAR(4000)
+                desc VARCHAR(4000),
+                favorites BOOLEAN
             )
         ''')
         conn.commit()

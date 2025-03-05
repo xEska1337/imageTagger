@@ -38,7 +38,8 @@ cursor.execute('''
                 filename VARCHAR(2000),
                 tags VARCHAR(2000),
                 text VARCHAR(3000),
-                desc VARCHAR(4000)
+                desc VARCHAR(4000),
+                favorites BOOLEAN
             )
         ''')
 conn.commit()
@@ -204,7 +205,7 @@ class ImageTagger(QWidget):
 
                 frame.mousePressEvent = lambda event, path=fullPath: self.open_image(event, path)
                 frame.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-                frame.customContextMenuRequested.connect(lambda _, path=fullPath: self.show_context_menu(path))
+                frame.customContextMenuRequested.connect(lambda _, path=fullPath, ident=id: self.show_context_menu(path, ident))
 
                 statsLayout = QHBoxLayout()
 
@@ -287,12 +288,22 @@ class ImageTagger(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
-    def show_context_menu(self, path):
+    def show_context_menu(self, path, id):
         menu = QMenu(self)
         menu.setStyleSheet("border-radius: 10px;")
         copy = menu.addAction("Copy to clipboard")
         copyPath = menu.addAction("Copy path")
         openPath = menu.addAction("Open file location")
+        addToFavorites = menu.addAction("Favorites")
+
+        cursor.execute("SELECT favorites FROM images WHERE id = ?", (id,))
+        result = cursor.fetchone()
+        if result:
+            if result[0] == 1:
+                font = addToFavorites.font()
+                font.setBold(True)
+                addToFavorites.setFont(font)
+
         action = menu.exec(QCursor.pos())
         if action == copy:
             clipboard = QGuiApplication.clipboard()
@@ -306,6 +317,9 @@ class ImageTagger(QWidget):
                 subprocess.run(["explorer", "/select,", path])
             else:
                 subprocess.run(["nautilus", "--select", path])
+        elif action == addToFavorites:
+            cursor.execute("UPDATE images SET favorites = CASE WHEN favorites = TRUE THEN FALSE ELSE TRUE END WHERE id = ?", (id,))
+            conn.commit()
 
     def search_images(self):
         if not self.imageWidgets:
@@ -366,15 +380,21 @@ class ImageTagger(QWidget):
 
             tags = list(set(tempTags))
             tags.sort()
+            tags.insert(0, "favorites")
 
             self.combo.addItems(tags)
 
     def filter_tags(self, value):
         global filterTags
         filterTags = value
-        self.image_hider()
+        fav = False
+        if value and value[0] == "favorites":
+            filterTags.pop(0)
+            fav = True
 
-    def image_hider(self):
+        self.image_hider(fav)
+
+    def image_hider(self, fav):
         sqlQuery = "SELECT id FROM images WHERE 1=1"
 
         global searchTags
@@ -391,6 +411,9 @@ class ImageTagger(QWidget):
         global filterTags
         for tag in filterTags:
             sqlQuery += f" AND tags LIKE '%{tag}%'"
+
+        if fav:
+            sqlQuery += f" AND favorites LIKE 1"
 
         cursor.execute(sqlQuery)
         result = cursor.fetchall()
@@ -434,7 +457,7 @@ class ImageTagger(QWidget):
         layout.addLayout(buttonLayout)
 
         # Init directory list
-        self.directories = []  # This will hold all selected directories
+        self.directories = []
         self.load_directories()
 
         # Database action buttons
