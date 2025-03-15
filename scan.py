@@ -3,14 +3,20 @@ import sqlite3
 import hashlib
 import time
 import qdarktheme
+import ctypes
 from exifOperations import delete_metadata, write_tags, write_text
 from getTags import getTag
 from getText import ocr_with_paddle
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QProgressBar, QLabel
+from PyQt6.QtWidgets import QApplication, QVBoxLayout, QProgressBar, QLabel, QDialog
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QIcon
 from pathlib import Path
 
+myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
 scanWindow = None
+isRunning = True
 
 
 def get_image_files_from_directory(directory):
@@ -74,6 +80,9 @@ class Scanner(QThread):
         self.itemCount.emit(len(fileList))
         skipped = 0
         for index, file in enumerate(fileList):
+            global isRunning
+            if not isRunning:
+                break
             filePath = os.path.normpath(os.path.join(self.directory, file))
             # Check if it already exists in database
             checkIfExistQuery = "SELECT id FROM images WHERE path LIKE ? AND shaValue LIKE ?"
@@ -116,11 +125,12 @@ class Scanner(QThread):
         conn.close()
 
 
-class ProgressBarWindow(QWidget):
+class ProgressBarWindow(QDialog):
     def __init__(self, directory, delete, write):
         super().__init__()
         qdarktheme.setup_theme()
         self.setWindowTitle("Scanning progress")
+        self.setWindowIcon(QIcon("icons/scanIcon.ico"))
         self.setGeometry(100, 100, 300, 100)
 
         layout = QVBoxLayout()
@@ -165,12 +175,16 @@ class ProgressBarWindow(QWidget):
         self.itemsLeftLabel.setText(f"Items left: {self.itemsLeftVar - value}")
 
     def closeEvent(self, a0):
-        self.scan.terminate()
+        global isRunning
+        isRunning = False
+        self.scan.quit()
         self.scan.wait()
         a0.accept()
 
 
 def start_scanner(directory, delete, write):
+    global isRunning
+    isRunning = True
     app = QApplication.instance()
     if app is None:
         app = QApplication([])

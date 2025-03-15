@@ -4,17 +4,21 @@ import time
 import sqlite3
 import qdarktheme
 import subprocess
+import scan
+import ctypes
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QFileDialog,
     QVBoxLayout, QHBoxLayout, QScrollArea, QGridLayout, QFrame,
     QProgressBar, QTabWidget, QComboBox, QLineEdit, QListWidget,
     QCheckBox, QMessageBox, QMenu
 )
-from PyQt6.QtGui import QPixmap, QDesktopServices, QGuiApplication, QColor, QPalette, QCursor
+from PyQt6.QtGui import QPixmap, QDesktopServices, QGuiApplication, QColor, QPalette, QCursor, QIcon
 from PyQt6.QtCore import Qt, QUrl, QTimer
-from scan import start_scanner
+from scan import ProgressBarWindow
 from multiComboBoxWithSearch import MultiSelectComboBoxWithSearch
-from watchFolders import start_watching, stop_watching
+
+myappid = 'mycompany.myproduct.subproduct.version' # arbitrary string
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 conn = sqlite3.connect("imageTagger.db")
 cursor = conn.cursor()
@@ -50,6 +54,7 @@ conn.commit()
 searchText = ""
 searchTags = []
 filterTags = []
+fav = False
 
 
 class ImageTagger(QWidget):
@@ -64,6 +69,7 @@ class ImageTagger(QWidget):
         self.setPalette(darkPalette)
 
         self.setWindowTitle("Image Tagger")
+        self.setWindowIcon(QIcon("icons/mainIcon.ico"))
         self.setGeometry(100, 100, 900, 650)
 
         mainLayout = QVBoxLayout(self)
@@ -234,7 +240,6 @@ class ImageTagger(QWidget):
                 filenameLabel.setStyleSheet("""
                 QLabel {
                     max-width: 250px;
-                    text-overflow: ellipsis;
                 }
                 """)
                 filenameLabel.setToolTip(filename)
@@ -387,14 +392,15 @@ class ImageTagger(QWidget):
     def filter_tags(self, value):
         global filterTags
         filterTags = value
+        global fav
         fav = False
         if value and value[0] == "favorites":
             filterTags.pop(0)
             fav = True
 
-        self.image_hider(fav)
+        self.image_hider()
 
-    def image_hider(self, fav):
+    def image_hider(self):
         sqlQuery = "SELECT id FROM images WHERE 1=1"
 
         global searchTags
@@ -412,6 +418,7 @@ class ImageTagger(QWidget):
         for tag in filterTags:
             sqlQuery += f" AND tags LIKE '%{tag}%'"
 
+        global fav
         if fav:
             sqlQuery += f" AND favorites LIKE 1"
 
@@ -486,16 +493,12 @@ class ImageTagger(QWidget):
         checkboxesLayout.addWidget(label2)
 
         self.deleteMetadataCheckbox = QCheckBox("Delete all metadata from scanned images", self)
-        self.deleteMetadataCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed(False))
+        self.deleteMetadataCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed())
         checkboxesLayout.addWidget(self.deleteMetadataCheckbox)
 
         self.writeMetadataCheckbox = QCheckBox("Write tags to image metadata", self)
-        self.writeMetadataCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed(False))
+        self.writeMetadataCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed())
         checkboxesLayout.addWidget(self.writeMetadataCheckbox)
-
-        self.autoscanCheckbox = QCheckBox("Auto scan new images", self)
-        self.autoscanCheckbox.stateChanged.connect(lambda _,: self.checkbox_changed(True))
-        checkboxesLayout.addWidget(self.autoscanCheckbox)
 
         self.load_checkbox_state()
 
@@ -514,7 +517,6 @@ class ImageTagger(QWidget):
                 self.refresh_list()
                 cursor.execute("INSERT INTO settings (directory) VALUES (?)", (newFolderPath,))
                 conn.commit()
-                self.checkbox_changed(True)
             else:
                 QMessageBox.warning(self, "Directory Already Added", "This directory is already added.")
 
@@ -534,7 +536,6 @@ class ImageTagger(QWidget):
             self.refresh_list()
             cursor.execute("DELETE FROM settings WHERE directory=?", (selectedDirectory,))
             conn.commit()
-            self.checkbox_changed(True)
 
     def refresh_list(self):
         self.directoryList.clear()
@@ -542,25 +543,15 @@ class ImageTagger(QWidget):
             self.directoryList.addItem(directory)
 
     def load_checkbox_state(self):
-        cursor.execute("SELECT deleteMetadata, writeMetadata, autoScan FROM settings WHERE id = 1")
+        cursor.execute("SELECT deleteMetadata, writeMetadata FROM settings WHERE id = 1")
         result = cursor.fetchone()
         if result:
             self.deleteMetadataCheckbox.setChecked(bool(result[0]))
             self.writeMetadataCheckbox.setChecked(bool(result[1]))
-            self.autoscanCheckbox.setChecked(bool(result[2]))
 
-    def checkbox_changed(self, value):
-        cursor.execute("UPDATE settings SET deleteMetadata = ?, writeMetadata = ?, autoScan = ? WHERE id = 1", (int(self.deleteMetadataCheckbox.isChecked()), int(self.writeMetadataCheckbox.isChecked()), int(self.autoscanCheckbox.isChecked())))
+    def checkbox_changed(self):
+        cursor.execute("UPDATE settings SET deleteMetadata = ?, writeMetadata = ? WHERE id = 1", (int(self.deleteMetadataCheckbox.isChecked()), int(self.writeMetadataCheckbox.isChecked())))
         conn.commit()
-        if value and self.autoscanCheckbox.isChecked():
-            stop_watching()
-            cursor.execute("SELECT directory FROM settings WHERE id != 1")
-            result = cursor.fetchall()
-            if result:
-                for row in result:
-                    start_watching(row, self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
-        elif not self.autoscanCheckbox.isChecked():
-            stop_watching()
 
     def load_directories(self):
         cursor.execute("SELECT directory FROM settings WHERE id != 1")
@@ -575,14 +566,17 @@ class ImageTagger(QWidget):
         result = cursor.fetchall()
         if result:
             for row in result:
-                start_scanner(row[0], self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
+                scan.isRunning = True
+                scan.scanWindow = ProgressBarWindow(row[0], self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
+                scan.scanWindow.show()
+                scan.scanWindow.exec()
 
     def delete_database(self):
         reply = QMessageBox.question(self, 'Confirm Deletion',
                                      f"Are you sure you want to delete image database",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            cursor.execute("DROP TABLE images")
+            cursor.execute("DROP TABLE IF EXISTS images")
             conn.commit()
 
     def rebuild_database(self):
@@ -590,12 +584,11 @@ class ImageTagger(QWidget):
                                      f"Are you sure you want to rebuild image database",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            cursor.execute("DROP TABLE images")
+            cursor.execute("DROP TABLE IF EXISTS images")
             conn.commit()
             self.scanner()
 
     def closeEvent(self, a0):
-        stop_watching()
         sys.exit(0)
 
 

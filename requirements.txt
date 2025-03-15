@@ -1,0 +1,8 @@
+pyqtdarktheme==2.1.0
+PyExifTool==0.5.6
+numpy==2.2.3
+onnxruntime==1.20.1
+paddlepaddle==2.6.2
+paddleocr==2.10.0
+PyQt6==6.8.1
+pandas==2.2.3
