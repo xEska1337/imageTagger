@@ -118,10 +118,19 @@ class Predictor:
 
 
 # Initialize the predictor object
-predictor = Predictor()
+predictor = None
+
+def get_predictor():
+    global predictor
+    if predictor is None:
+        print("Loading tags model...")
+        predictor = Predictor()
+        print("Tags model loaded.")
+    return predictor
 
 
 def getTag(image_path: str, score_threshold: float):
+    local_predictor = get_predictor()
     image = Image.open(image_path)
-    return predictor.predict(image, score_threshold)
+    return local_predictor.predict(image, score_threshold)
 

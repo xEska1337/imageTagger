@@ -402,27 +402,33 @@ class ImageTagger(QWidget):
 
     def image_hider(self):
         sqlQuery = "SELECT id FROM images WHERE 1=1"
+        params = []
 
         global searchTags
         global searchText
         if searchTags:
             for tag in searchTags:
-                sqlQuery += f" AND tags LIKE '%{tag}%'"
+                sqlQuery += " AND tags LIKE ?"
+                params.append(f"%{tag}%")
 
             if searchText != self.searchBox.text().lower().strip():
-                sqlQuery += f" AND text LIKE '%{searchText}%'"
+                sqlQuery += " AND text LIKE ?"
+                params.append(f"%{searchText}%")
         else:
-            sqlQuery += f" AND text LIKE '%{searchText}%'"
+            sqlQuery += " AND text LIKE ?"
+            params.append(f"%{searchText}%")
 
         global filterTags
         for tag in filterTags:
-            sqlQuery += f" AND tags LIKE '%{tag}%'"
+            sqlQuery += " AND tags LIKE ?"
+            params.append(f"%{tag}%")
 
         global fav
         if fav:
-            sqlQuery += f" AND favorites LIKE 1"
+            sqlQuery += " AND favorites = ?"
+            params.append(1)
 
-        cursor.execute(sqlQuery)
+        cursor.execute(sqlQuery, tuple(params))
         result = cursor.fetchall()
         if result:
             ids = {str(row[0]) for row in result}
@@ -570,6 +576,11 @@ class ImageTagger(QWidget):
                 scan.scanWindow = ProgressBarWindow(row[0], self.deleteMetadataCheckbox.isChecked(), self.writeMetadataCheckbox.isChecked())
                 scan.scanWindow.show()
                 scan.scanWindow.exec()
+
+            QMessageBox.information(self, "Scan Complete",
+                                    "All directories have been scanned. Refreshing the image grid.")
+            self.load_images()
+            self.pull_tags()
 
     def delete_database(self):
         reply = QMessageBox.question(self, 'Confirm Deletion',
